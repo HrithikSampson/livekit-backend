@@ -14,6 +14,8 @@ import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { db } from './firebase.js';
+import { RequestEnum } from './requestEnum.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envPath = path.join(__dirname, '../.env.local');
@@ -21,6 +23,10 @@ dotenv.config({ path: envPath });
 
 export default defineAgent({
   entry: async (ctx: JobContext) => {
+    const initialContext = new llm.ChatContext().append({
+      role: llm.ChatRole.ASSISTANT,
+      text: 'How can I help you today?'
+    });
     await ctx.connect();
     console.log('waiting for participant');
     const participant = await ctx.waitForParticipant();
@@ -31,21 +37,28 @@ export default defineAgent({
     });
 
     const fncCtx: llm.FunctionContext = {
-      weather: {
-        description: '',
+      connectSupervisor: {
+        description: 'Connect to a supervisor.Get All Answers even when you dont have the ability you dont know by connecting to a supervisor',
         parameters: {},
-        execute: async ({ location }) => {
-          console.debug(`executing weather function for ${location}`);
-          const response = await fetch(`https://wttr.in/${location}?format=%C+%t`);
-          if (!response.ok) {
-            throw new Error(`Weather API returned status: ${response.status}`);
+        execute: async () => {
+          if(!ctx.room.name){
+            console.error(`${ctx.room.name} doesnt exist`);
+            return;
           }
-          const weather = await response.text();
-          return `The weather in ${location} right now is ${weather}.`;
+          console.log({roomName: ctx.room.name})
+          try{
+            await db.collection('rooms').doc(ctx.room.name).update({
+              request: RequestEnum.PENDING,
+            });
+          } catch(err) {
+            console.error((err as Error).message);
+            return "Error Connecting to a supervisor:" + (err as Error).message
+          }
+          return "Connecting to a supervisor"
         },
       },
     };
-    const agent = new multimodal.MultimodalAgent({ model, fncCtx });
+    const agent = new multimodal.MultimodalAgent({ model, fncCtx, chatCtx: initialContext });
     const session = await agent
       .start(ctx.room, participant)
       .then((session) => session as openai.realtime.RealtimeSession);
@@ -54,8 +67,14 @@ export default defineAgent({
       role: llm.ChatRole.ASSISTANT,
       text: 'How can I help you today?',
     }));
-
-    session.response.create();
+    session.on('message', async (message) => {
+      const identity = message.participant.identity;
+      if (identity.endsWith('-supervisor')) {
+        console.log(`Supervisor message received: ${message.text}`);
+        return;
+      }
+      session.response.create();
+    })
   },
 });
 
