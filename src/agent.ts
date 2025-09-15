@@ -261,28 +261,29 @@ export default defineAgent({
       },
     };
 
+    const identity = participant.identity;
+
+    if (identity.endsWith('-supervisor')) {
+      console.log(`Supervisor joined the room: ${identity}`);
+      // return;
+      const supervisorSession = new voice.AgentSession({
+        vad: ctx.proc.userData.vad! as silero.VAD,
+        // Don't provide an LLM - this prevents responses
+        userData: { room: { name: participant.sid } },
+      });
+
+      await supervisorSession.start({
+        room: ctx.room,
+        agent: SilentAgent.create(),
+      });
+      return;
+    }
+
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad! as silero.VAD,
       llm: new google.beta.realtime.RealtimeModel(),
       userData: userdata,
     });
-    const identity = participant.identity;
-
-    if (identity.endsWith('-supervisor')) {
-      console.log(`Supervisor joined the room: ${identity}`);
-      return;
-      // const supervisorSession = new voice.AgentSession({
-      //   vad: ctx.proc.userData.vad! as silero.VAD,
-      //   // Don't provide an LLM - this prevents responses
-      //   userData: { room: { name: participant.sid } },
-      // });
-
-      // await supervisorSession.start({
-      //   room: ctx.room,
-      //   agent: SilentAgent.create(),
-      // });
-    }
-
     await session.start({
       agent: IntroAgent.create(),
       room: ctx.room,
