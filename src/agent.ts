@@ -129,13 +129,17 @@ class IntroAgent extends voice.Agent<Data> {
       tools: {
         connectSupervisor: llm.tool({
           description:
-            'Escalate the conversation to a human supervisor when the assistant lacks capability or context. Trigger if the LLM is unsure or cannot provide a useful answer.',
+            `Escalate the conversation to a human supervisor when the assistant lacks capability or context. Trigger if the LLM is unsure or cannot provide a useful answer.
+            - Always use this tool when the user explicitly requests to talk to a human.
+            - Always use this tool when you say "i think this is out of my reach , Setting you up with a human now"
+            `,
           parameters: z.object({
             name: z.string().optional().describe('Name of the user'),
             issue: z.string().optional().describe('Issue faced by the user'),
           }).strict(),
-          execute: async (_args, { ctx }) => {
-            
+          execute: async (args, { ctx }) => {
+            const name = (args?.name ?? '').trim() || undefined;
+            const issue = (args?.issue ?? '').trim() || undefined;
             const roomName = ctx.userData?.room?.name;
             if (!roomName) {
               console.error('Room name is missing in userData');
@@ -145,9 +149,15 @@ class IntroAgent extends voice.Agent<Data> {
             console.log({ roomName });
 
             try {
-              await db.collection('rooms').doc(roomName, ).update({
-                request: RequestEnum.PENDING,
-              });
+              await db.collection('rooms').doc(roomName).set(
+                {
+                  request: RequestEnum.PENDING,
+                  requestor: name ?? null,
+                  issue: issue ?? null,
+                  lastRequestAt: new Date(),
+                },
+                { merge: true },
+              );
             } catch (err) {
               console.error((err as Error).message);
               return 'Error connecting to a supervisor: ' + (err as Error).message;
