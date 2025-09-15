@@ -1,5 +1,5 @@
 export enum RequestEnum {
-    START = "START",
-    PENDING = "PENDING",
-    RESOLVED = "RESOLVED",
+  START = 'START',
+  PENDING = 'PENDING',
+  RESOLVED = 'RESOLVED',
 }

@@ -3,12 +3,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
   type JobContext,
+  type JobProcess,
   WorkerOptions,
   cli,
   defineAgent,
   llm,
-  type JobProcess,
-  voice
+  voice,
 } from '@livekit/agents';
 import * as google from '@livekit/agents-plugin-google';
 import * as silero from '@livekit/agents-plugin-silero';
@@ -25,6 +25,12 @@ dotenv.config({ path: envPath });
 
 type Data = {
   room?: { name?: string };
+};
+
+type SilentData = {
+  room?: { name?: string };
+  participantName?: string;
+  sessionStartTime?: Date;
 };
 
 class IntroAgent extends voice.Agent<Data> {
@@ -128,15 +134,16 @@ class IntroAgent extends voice.Agent<Data> {
       `,
       tools: {
         connectSupervisor: llm.tool({
-          description:
-            `Escalate the conversation to a human supervisor when the assistant lacks capability or context. Trigger if the LLM is unsure or cannot provide a useful answer.
+          description: `Escalate the conversation to a human supervisor when the assistant lacks capability or context. Trigger if the LLM is unsure or cannot provide a useful answer.
             - Always use this tool when the user explicitly requests to talk to a human.
             - Always use this tool when you say "i think this is out of my reach , Setting you up with a human now"
             `,
-          parameters: z.object({
-            name: z.string().optional().describe('Name of the user'),
-            issue: z.string().optional().describe('Issue faced by the user'),
-          }).strict(),
+          parameters: z
+            .object({
+              name: z.string().optional().describe('Name of the user'),
+              issue: z.string().optional().describe('Issue faced by the user'),
+            })
+            .strict(),
           execute: async (args, { ctx }) => {
             const name = (args?.name ?? '').trim() || undefined;
             const issue = (args?.issue ?? '').trim() || undefined;
@@ -149,17 +156,23 @@ class IntroAgent extends voice.Agent<Data> {
             console.log({ roomName });
 
             try {
-              await db.collection('rooms').doc(roomName).set(
-                {
+              console.log(
+                `Saving to database - Room: ${roomName}, Requestor: ${name}, Issue: ${issue}`,
+              );
+
+              await db
+                .collection('rooms')
+                .doc(roomName)
+                .set({
                   request: RequestEnum.PENDING,
                   requestor: name ?? null,
                   issue: issue ?? null,
                   lastRequestAt: new Date(),
-                },
-                { merge: true },
-              );
+                });
+
+              console.log('Successfully saved to database');
             } catch (err) {
-              console.error((err as Error).message);
+              console.error('Database error:', (err as Error).message);
               return 'Error connecting to a supervisor: ' + (err as Error).message;
             }
 
@@ -170,32 +183,111 @@ class IntroAgent extends voice.Agent<Data> {
     });
   }
 }
+class SilentAgent extends voice.Agent<SilentData> {
+  
+  async onEnter() {
+    console.log('Silent voice agent entered - monitoring mode');
+    
+    // Update session start time
+    if (this.session.userData) {
+      this.session.userData.sessionStartTime = new Date();
+    }
+    
+    // No LLM reply - completely silent
+  }
 
+  async onLeave() {
+    console.log('Silent voice agent left');
+    
+    const userData = this.session.userData;
+    if (userData?.sessionStartTime) {
+      const duration = Date.now() - userData.sessionStartTime.getTime();
+      console.log(`Silent agent session duration: ${Math.round(duration / 1000)} seconds`);
+    }
+  }
+
+  // Override any voice processing methods to make them silent
+  async onSpeechCommitted(message: string) {
+    console.log(`Silent agent heard: "${message}"`);
+    // Process the speech but don't respond
+    this.processIncomingSpeech(message);
+  }
+
+  async onSpeechInterrupted() {
+    console.log('Silent agent: Speech was interrupted');
+  }
+
+  private processIncomingSpeech(message: string) {
+    // Silent processing - log keywords but don't respond
+    const lowerMessage = message.toLowerCase();
+    
+    if (lowerMessage.includes('help') || lowerMessage.includes('support')) {
+      console.log('Silent agent detected: User needs help');
+    }
+    
+    if (lowerMessage.includes('emergency') || lowerMessage.includes('urgent')) {
+      console.log('Silent agent detected: Urgent situation');
+    }
+    
+    if (lowerMessage.includes('human') || lowerMessage.includes('supervisor')) {
+      console.log('Silent agent detected: User wants human assistance');
+    }
+    
+    
+  }
+  static create() {
+    return new SilentAgent({
+      // No instructions needed - silent agent
+      instructions: '', 
+      // No tools - no LLM interaction
+      tools: {},
+    });
+  }
+}
 export default defineAgent({
   prewarm: async (proc: JobProcess) => {
     proc.userData.vad = await silero.VAD.load();
   },
   entry: async (ctx: JobContext) => {
-    const userdata: Data = { room: {} };
+    console.log('Job context:', ctx);
+    console.log('Agent starting for room:', ctx.room.name);
+
+    await ctx.connect();
+    const participant = await ctx.waitForParticipant();
+    console.log('participant joined: ', participant.identity);
+    const userdata: Data = {
+      room: {
+        name: participant.sid,
+      },
+    };
 
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad! as silero.VAD,
       llm: new google.beta.realtime.RealtimeModel(),
       userData: userdata,
     });
+    const identity = participant.identity;
+
+    if (identity.endsWith('-supervisor')) {
+      console.log(`Supervisor joined the room: ${identity}`);
+      return;
+      // const supervisorSession = new voice.AgentSession({
+      //   vad: ctx.proc.userData.vad! as silero.VAD,
+      //   // Don't provide an LLM - this prevents responses
+      //   userData: { room: { name: participant.sid } },
+      // });
+
+      // await supervisorSession.start({
+      //   room: ctx.room,
+      //   agent: SilentAgent.create(),
+      // });
+    }
+
     await session.start({
       agent: IntroAgent.create(),
       room: ctx.room,
     });
-    const participant = await ctx.waitForParticipant();
-    console.log('participant joined: ', participant.identity);
-    const identity = participant.identity;
-    if (identity.endsWith('-supervisor')) {
-      console.log(`Supervisor joined the room: ${identity}`);
-      return;
-    }
-
-    
   },
 });
+
 cli.runApp(new WorkerOptions({ agent: fileURLToPath(import.meta.url) }));

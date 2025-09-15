@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint -f unix \"**/*.ts\"",
+    "lint:fix": "eslint --fix -f unix \"**/*.ts\"",
     "start": "node dist/agent.js dev"
   },
   "packageManager": "pnpm@9.15.9",

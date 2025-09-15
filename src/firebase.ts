@@ -1,8 +1,10 @@
 // @/utils/firebase.ts
-import admin, { ServiceAccount } from 'firebase-admin';
+import type { ServiceAccount } from 'firebase-admin';
+import admin from 'firebase-admin';
 
 // Path to your service account key file
 // Adjust this path as needed based on where you store your key file
+// eslint-disable-next-line prettier/prettier
 import serviceAccount from '../serviceAccountKey.json' assert { type: 'json' };
 
 // Initialize Firebase Admin SDK if not already initialized
