@@ -5,13 +5,9 @@ on:
   push:
     branches: [ main ]
     paths: 
-      - 'src/agent.ts'
-      - 'src/firebase.ts'
-      - 'src/requestEnum.ts'
-      - 'requestEnum.ts'
-      - 'package.json'
-      - 'tsconfig.json'
+      - 'src/**'
       - 'Dockerfile'
+      - 'package.json'
       - '.github/workflows/deploy-backend.yml'
 
 env:
