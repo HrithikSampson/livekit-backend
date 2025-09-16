@@ -45,6 +45,12 @@ jobs:
         docker push $ECR_REGISTRY/livekit-backend:$IMAGE_TAG
         docker push $ECR_REGISTRY/livekit-backend:latest
 
+    - name: Debug task definition
+      run: |
+        echo "${{ env.CONTAINER_NAME }}"
+        echo "${{ env.ECS_TASK_DEFINITION }}"
+        cat ${{ steps.task-def.outputs.task-definition }}
+
     - name: Update ECS service
       run: |
         # Force new deployment
