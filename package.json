@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "pnpm tsc -p .",
     "lint": "eslint -f unix \"**/*.ts\"",
     "lint:fix": "eslint --fix -f unix \"**/*.ts\"",
     "start": "node dist/agent.js dev"
@@ -20,7 +20,7 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-prettier": "^5.2.1",
-    "typescript": "^5.6.3"
+    "typescript": "^5.9.2"
   },
   "dependencies": {
     "@livekit/agents": "1.0.3",

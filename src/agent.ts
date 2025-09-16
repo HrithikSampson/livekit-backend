@@ -175,7 +175,9 @@ class IntroAgent extends voice.Agent<Data> {
               console.error('Database error:', (err as Error).message);
               return 'Error connecting to a supervisor: ' + (err as Error).message;
             }
-
+            llm.handoff({
+              agent: SilentAgent.create(),
+            });
             return 'Connecting to a supervisor...';
           },
         }),
@@ -250,14 +252,15 @@ export default defineAgent({
   },
   entry: async (ctx: JobContext) => {
     console.log('Job context:', ctx);
-    console.log('Agent starting for room:', ctx.room.name);
+    
 
     await ctx.connect();
+    console.log('Agent starting for room:', ctx.room.name);
     const participant = await ctx.waitForParticipant();
     console.log('participant joined: ', participant.identity);
     const userdata: Data = {
       room: {
-        name: participant.sid,
+        name: ctx.room.name,
       },
     };
 
@@ -265,17 +268,6 @@ export default defineAgent({
 
     if (identity.endsWith('-supervisor')) {
       console.log(`Supervisor joined the room: ${identity}`);
-      // return;
-      const supervisorSession = new voice.AgentSession({
-        vad: ctx.proc.userData.vad! as silero.VAD,
-        // Don't provide an LLM - this prevents responses
-        userData: { room: { name: participant.sid } },
-      });
-
-      await supervisorSession.start({
-        room: ctx.room,
-        agent: SilentAgent.create(),
-      });
       return;
     }
 
