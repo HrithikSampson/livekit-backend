@@ -2,24 +2,34 @@
 import type { ServiceAccount } from 'firebase-admin';
 import admin from 'firebase-admin';
 
-// Path to your service account key file
-// Adjust this path as needed based on where you store your key file
-// eslint-disable-next-line prettier/prettier
-import serviceAccount from '../serviceAccountKey.json' assert { type: 'json' };
-
-// Initialize Firebase Admin SDK if not already initialized
 if (!admin.apps.length) {
   try {
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount as ServiceAccount),
-    });
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+    if (!raw) {
+      // Falls back to ADC if running on GCP with Workload Identity
+      admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DB_URL,
+      });
+    } else {
+      let serviceAccount = JSON.parse(raw) as ServiceAccount & { private_key?: string };
+      if (serviceAccount.private_key?.includes('\\n')) {
+        serviceAccount = { ...serviceAccount, private_key: serviceAccount.private_key.replace(/\\n/g, '\n') };
+      }
+
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DB_URL,
+      });
+    }
+
+    // eslint-disable-next-line no-console
     console.log('Firebase Admin initialized successfully');
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('Firebase admin initialization error', error);
-    console.error('Make sure serviceAccountKey.json is in the correct location');
   }
 }
 
 const db = admin.firestore();
-
 export { db };
