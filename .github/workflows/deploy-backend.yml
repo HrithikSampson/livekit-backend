@@ -29,6 +29,11 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
+    - name: Create ECR repository if it doesn't exist
+      run: |
+        aws ecr describe-repositories --repository-names livekit-backend --region ${{ env.AWS_REGION }} || \
+        aws ecr create-repository --repository-name livekit-backend --region ${{ env.AWS_REGION }}
+
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
@@ -37,28 +42,54 @@ jobs:
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
+        ECR_REPOSITORY: livekit-backend
       run: |
         # Build Docker image
-        docker build -t $ECR_REGISTRY/livekit-backend:$IMAGE_TAG .
-        docker build -t $ECR_REGISTRY/livekit-backend:latest .
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
         
         # Push images to ECR
-        docker push $ECR_REGISTRY/livekit-backend:$IMAGE_TAG
-        docker push $ECR_REGISTRY/livekit-backend:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-    - name: Debug task definition
+    - name: Update ECS task definition
+      id: task-def
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+        ECR_REPOSITORY: livekit-backend
       run: |
-        echo "${{ env.CONTAINER_NAME }}"
-        echo "${{ env.ECS_TASK_DEFINITION }}"
-        cat ${{ steps.task-def.outputs.task-definition }}
+        # Get the current task definition
+        TASK_DEFINITION=$(aws ecs describe-task-definition \
+          --task-definition ${{ env.PROJECT_NAME }}-backend-task \
+          --region ${{ env.AWS_REGION }} \
+          --query 'taskDefinition')
+        
+        # Update the image URI in the task definition
+        NEW_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" '.containerDefinitions[0].image = $IMAGE')
+        
+        # Remove fields that shouldn't be in the new task definition
+        NEW_TASK_DEFINITION=$(echo $NEW_TASK_DEFINITION | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)')
+        
+        # Save the new task definition
+        echo "$NEW_TASK_DEFINITION" > new-task-definition.json
+        
+        # Register the new task definition
+        NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --cli-input-json file://new-task-definition.json \
+          --region ${{ env.AWS_REGION }} \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+        
+        echo "NEW_TASK_DEF_ARN=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
 
     - name: Update ECS service
       run: |
-        # Force new deployment
+        # Update the service with the new task definition
         aws ecs update-service \
           --cluster ${{ env.PROJECT_NAME }}-cluster \
           --service ${{ env.PROJECT_NAME }}-backend-service \
-          --force-new-deployment \
+          --task-definition ${{ steps.task-def.outputs.NEW_TASK_DEF_ARN }} \
           --region ${{ env.AWS_REGION }}
         
         # Wait for deployment to complete
