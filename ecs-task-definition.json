@@ -7,7 +7,7 @@
   "executionRoleArn": "arn:aws:iam::497816397337:role/ecsTaskExecutionRole",
   "containerDefinitions": [
     {
-      "name": "livekit-backend",
+      "name": "backend",
       "image": "497816397337.dkr.ecr.ap-south-1.amazonaws.com/livekit-backend:latest",
       "portMappings": [
         {
