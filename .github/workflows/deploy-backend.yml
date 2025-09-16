@@ -46,26 +46,76 @@ jobs:
         docker push $ECR_REGISTRY/livekit-backend:$IMAGE_TAG
         docker push $ECR_REGISTRY/livekit-backend:latest
 
-    - name: Debug task definition
+    - name: Create ECS infrastructure if needed
       run: |
-        echo "${{ env.CONTAINER_NAME }}"
-        echo "${{ env.ECS_TASK_DEFINITION }}"
-        cat ${{ steps.task-def.outputs.task-definition }}
-
-    - name: Update ECS service
-      run: |
-        # Force new deployment
-        aws ecs update-service \
-          --cluster ${{ env.PROJECT_NAME }}-cluster \
-          --service ${{ env.PROJECT_NAME }}-backend-service \
-          --force-new-deployment \
-          --region ${{ env.AWS_REGION }}
+        # Create ECS cluster if it doesn't exist
+        aws ecs describe-clusters --clusters ${{ env.PROJECT_NAME }}-cluster --region ${{ env.AWS_REGION }} || \
+        aws ecs create-cluster --cluster-name ${{ env.PROJECT_NAME }}-cluster --region ${{ env.AWS_REGION }}
         
-        # Wait for deployment to complete
-        aws ecs wait services-stable \
-          --cluster ${{ env.PROJECT_NAME }}-cluster \
-          --services ${{ env.PROJECT_NAME }}-backend-service \
-          --region ${{ env.AWS_REGION }}
+        # Create CloudWatch log group if it doesn't exist
+        aws logs describe-log-groups --log-group-name-prefix "/ecs/${{ env.PROJECT_NAME }}-backend" --region ${{ env.AWS_REGION }} || \
+        aws logs create-log-group --log-group-name "/ecs/${{ env.PROJECT_NAME }}-backend" --region ${{ env.AWS_REGION }}
+
+    - name: Create or update ECS task definition
+      id: task-def
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Check if task definition exists
+        if aws ecs describe-task-definition --task-definition ${{ env.PROJECT_NAME }}-backend-task --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+          echo "Task definition exists, updating..."
+          # Get the current task definition
+          TASK_DEFINITION=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.PROJECT_NAME }}-backend-task \
+            --region ${{ env.AWS_REGION }} \
+            --query 'taskDefinition')
+          
+          # Update the image URI in the task definition
+          NEW_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq --arg IMAGE "$ECR_REGISTRY/livekit-backend:$IMAGE_TAG" '.containerDefinitions[0].image = $IMAGE')
+          
+          # Remove fields that shouldn't be in the new task definition
+          NEW_TASK_DEFINITION=$(echo $NEW_TASK_DEFINITION | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)')
+          
+          # Save the new task definition
+          echo "$NEW_TASK_DEFINITION" > new-task-definition.json
+        else
+          echo "Task definition doesn't exist, creating from template..."
+          # Use the template task definition and update the image
+          cp ecs-task-definition.json new-task-definition.json
+          # Update the image in the template
+          jq --arg IMAGE "$ECR_REGISTRY/livekit-backend:$IMAGE_TAG" '.containerDefinitions[0].image = $IMAGE' ecs-task-definition.json > new-task-definition.json
+        fi
+        
+        # Register the new task definition
+        NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --cli-input-json file://new-task-definition.json \
+          --region ${{ env.AWS_REGION }} \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+        
+        echo "NEW_TASK_DEF_ARN=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
+
+    - name: Update ECS service (if exists)
+      run: |
+        # Check if service exists
+        if aws ecs describe-services --cluster ${{ env.PROJECT_NAME }}-cluster --services ${{ env.PROJECT_NAME }}-backend-service --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+          echo "Service exists, updating..."
+          aws ecs update-service \
+            --cluster ${{ env.PROJECT_NAME }}-cluster \
+            --service ${{ env.PROJECT_NAME }}-backend-service \
+            --task-definition ${{ steps.task-def.outputs.NEW_TASK_DEF_ARN }} \
+            --region ${{ env.AWS_REGION }}
+          
+          # Wait for deployment to complete
+          aws ecs wait services-stable \
+            --cluster ${{ env.PROJECT_NAME }}-cluster \
+            --services ${{ env.PROJECT_NAME }}-backend-service \
+            --region ${{ env.AWS_REGION }}
+        else
+          echo "ECS service doesn't exist. You need to create it manually or use the setup script."
+          echo "Run: ./setup-ecs-infrastructure.sh"
+        fi
 
     - name: Deployment status
       run: |

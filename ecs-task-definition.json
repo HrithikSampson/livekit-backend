@@ -1,0 +1,53 @@
+{
+  "family": "livekit-app-backend-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::497816397337:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "livekit-backend",
+      "image": "497816397337.dkr.ecr.ap-south-1.amazonaws.com/livekit-backend:latest",
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/livekit-app-backend",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "LIVEKIT_API_KEY",
+          "valueFrom": "arn:aws:ssm:ap-south-1:497816397337:parameter/livekit/api-key"
+        },
+        {
+          "name": "LIVEKIT_API_SECRET",
+          "valueFrom": "arn:aws:ssm:ap-south-1:497816397337:parameter/livekit/api-secret"
+        },
+        {
+          "name": "FIREBASE_SERVICE_ACCOUNT",
+          "valueFrom": "arn:aws:ssm:ap-south-1:497816397337:parameter/livekit/firebase-service-account"
+        },
+        {
+          "name": "NEXT_PUBLIC_FIREBASE_DB_URL",
+          "valueFrom": "arn:aws:ssm:ap-south-1:497816397337:parameter/livekit/firebase-db-url"
+        }
+      ]
+    }
+  ]
+}
