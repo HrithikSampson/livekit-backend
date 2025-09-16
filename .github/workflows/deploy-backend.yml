@@ -38,7 +38,7 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Build Docker image
+        # Build Docker image for Node.js LiveKit Agent
         docker build -t $ECR_REGISTRY/livekit-backend:$IMAGE_TAG .
         docker build -t $ECR_REGISTRY/livekit-backend:latest .
         
@@ -70,4 +70,4 @@ jobs:
     - name: Deployment status
       run: |
         echo "Backend deployment completed successfully!"
-        echo "Check your API at your ALB DNS name/api"
+        echo "Check your LiveKit Agent at your ALB DNS name"
