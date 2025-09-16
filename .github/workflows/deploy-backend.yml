@@ -101,4 +101,4 @@ jobs:
     - name: Deployment status
       run: |
         echo "Backend deployment completed successfully!"
-        echo "Check your API at your ALB DNS name/api"
+        echo "Check your LiveKit Agent at your ALB DNS name"
