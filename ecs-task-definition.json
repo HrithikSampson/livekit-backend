@@ -1,5 +1,5 @@
 {
-  "family": "livekit-app-backend-task",
+  "family": "livekit-app-backend",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "256",

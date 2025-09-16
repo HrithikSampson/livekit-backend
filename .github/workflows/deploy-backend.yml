@@ -69,11 +69,11 @@ jobs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         # Check if task definition exists
-        if aws ecs describe-task-definition --task-definition ${{ env.PROJECT_NAME }}-backend-task --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+        if aws ecs describe-task-definition --task-definition ${{ env.PROJECT_NAME }}-backend --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
           echo "Task definition exists, updating..."
           # Get the current task definition
           TASK_DEFINITION=$(aws ecs describe-task-definition \
-            --task-definition ${{ env.PROJECT_NAME }}-backend-task \
+            --task-definition ${{ env.PROJECT_NAME }}-backend \
             --region ${{ env.AWS_REGION }} \
             --query 'taskDefinition')
           
